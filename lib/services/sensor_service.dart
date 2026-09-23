@@ -6,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 
 import '../models/sensor_models.dart';
+import 'crash_detector.dart';
 
 /// One timestamped acceleration sample, kept only long enough to integrate.
 class _TimedVector {
@@ -101,6 +102,11 @@ class SensorService extends ChangeNotifier {
 
   /// Recent [linearG] samples for the live trace.
   final trace = RingBuffer(180);
+
+  /// Classifies bursts of activity as crash or not. Fed from
+  /// [_onLinearSample], so it runs at the linear-acceleration rate — the
+  /// fastest channel, and the one that opens an event window.
+  final detector = CrashDetector();
 
   DateTime? sessionStart;
   bool _running = false;
@@ -227,6 +233,18 @@ class SensorService extends ChangeNotifier {
     _lastLinearG = g;
     _lastJerkAt = now;
 
+    detector.ingest(
+      CrashSample(
+        at: now,
+        linearG: g,
+        totalG: totalG,
+        jerkGPerSec: jerkGPerSec,
+        rotationDegPerSec: rotationDegPerSec,
+        speedKmh: speedKmh,
+        pressureHpa: pressureHpa,
+      ),
+    );
+
     _window.add(_TimedVector(now, sample));
     final cutoff = now.subtract(_integrationWindow);
     _window.removeWhere((s) => s.at.isBefore(cutoff));
@@ -329,6 +347,7 @@ class SensorService extends ChangeNotifier {
     jerkGPerSec = 0;
     trace.clear();
     _window.clear();
+    detector.reset();
     sessionStart = DateTime.now();
     notifyListeners();
   }

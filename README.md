@@ -2,10 +2,84 @@
 
 Experimental Flutter app for vehicle crash detection research. Android + iOS.
 
-**Step 1 of the project — instrumentation.** This build reads every motion sensor and the
-GPS and displays them live. It does **not** classify a crash, does not alert anyone, and
-must not be relied on for safety. It exists so the thresholds a later detector will use can
-be measured on real hardware instead of guessed.
+Reads every motion sensor and the GPS, displays them live, and runs a **first-pass crash
+classifier** over them. It does not alert anyone and **must not be relied on for safety** —
+the thresholds are placeholders that have never been fitted to real hardware.
+
+---
+
+## The detector
+
+`lib/services/crash_detector.dart` — pure logic, no Flutter dependency, fully unit-tested.
+
+The problem is not detecting a 20 g impact. That's trivial. It's **not firing on the
+thousand potholes, dropped phones and hard stops that produce a similar spike.** So:
+
+1. A spike above `impactG` (3.5 g) **opens an evidence window** of 1500 ms. Crossing it is
+   not a crash — a pothole clears it easily.
+2. Everything in that window is **collected before judging**. Corroborating signals arrive
+   *after* the first spike, not with it.
+3. **Gates run first and can veto outright**, whatever the score.
+4. The rest are **scored and summed**. ≥ 70 = crash, ≥ 45 = possible.
+
+**A failed gate beats any score.** The asymmetry is deliberate: a false positive means
+calling emergency services to a pothole.
+
+### Gates (veto)
+
+| Gate | Rejects |
+|---|---|
+| **Not a dropped phone** | Total g fell below 0.35 before the spike → free-fall → the phone fell, the vehicle didn't crash. |
+| **Vehicle was moving** | Pre-impact speed under 15 km/h → no collision to have. A jolt in a parked car isn't a crash. |
+
+### Scored indicators
+
+| Indicator | Weight | Reasoning |
+|---|---|---|
+| Impact force | 25 (40 if ≥ 8 g) | Primary signal. |
+| Onset too fast for braking | 25 | Jerk ≥ 40 g/s. Braking climbs over a second; an impact arrives in under 50 ms. |
+| Rotation | 15 (25 if ≥ 250 °/s) | Catches rollovers that never peak in g. |
+| Speed collapsed | 25 | Drop ≥ 20 km/h across the window. |
+| Cabin pressure spike | 10 | Airbag corroboration. |
+| **No speed drop** | **−30** | See below. |
+
+**The −30 penalty is the pothole filter.** A working GPS fix showing *no* speed change is
+evidence *against* a collision, not merely absent evidence for one — a vehicle that takes
+several g does not carry on at the same speed. It applies only when the fix is usable, so a
+crash in a tunnel still stands on motion alone.
+
+### Unknown is not false
+
+A condition whose inputs are missing — no GPS fix, no barometer — is marked **unknown**, not
+failed. Treating "couldn't tell" as "didn't happen" is how a detector quietly rejects a real
+crash in a tunnel.
+
+### Verified scenarios
+
+`test/crash_detector_test.dart` builds each scenario sample-by-sample at 50 Hz with explicit
+timestamps, so nothing depends on the wall clock:
+
+| Scenario | Expected | Why |
+|---|---|---|
+| Normal driving | no event | never crosses the trigger |
+| Hard braking (0.75 g) | no event | below trigger entirely |
+| Pothole | **rejected** | spike + jerk, but speed unchanged → −30 |
+| Dropped phone | **rejected** | free-fall gate, score forced to 0 |
+| Drop with *perfect* crash signature | **rejected** | proves the gate beats any score |
+| Jolt in a parked car | **rejected** | wasn't moving |
+| Collision at 65 km/h | **crash** | four channels agree |
+| Collision with no GPS | **crash** | motion alone; speed marked unknown |
+| Rollover | **crash** | carried mainly by rotation |
+
+⚠️ These prove the decision **logic** is coherent. They do **not** prove the **thresholds**
+are right — the scenarios are hand-built, not recorded. Only a calibration drive can do that.
+
+Thresholds are injectable (`CrashDetector(thresholds: …)`), so tuning needs no code change.
+
+---
+
+**Step 1 of the project — instrumentation.** The readout below the verdict exists so those
+thresholds can be measured on real hardware instead of guessed.
 
 ---
 
@@ -176,7 +250,7 @@ numbers this screen exists to collect are meaningless there.
 ## Next steps
 
 1. Session recording to CSV so runs can be compared offline.
-2. Threshold calibration from recorded drives (normal driving, potholes, hard braking,
-   phone drops) to establish the false-positive floor.
-3. Detection logic, once the data says what the thresholds should be.
-4. Alerting.
+2. **Threshold calibration** from recorded drives — normal driving, potholes, hard braking,
+   phone drops — to replace the placeholders in `CrashThresholds` with measured values.
+   This is the blocking task: every number in the detector is currently a guess.
+3. Alerting, once the detector has been shown not to fire on ordinary driving.

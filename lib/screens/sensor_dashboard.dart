@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/sensor_models.dart';
 import '../services/sensor_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/crash_verdict_card.dart';
 import '../widgets/explain_scope.dart';
 import '../widgets/sensor_card.dart';
 import '../widgets/trace_painter.dart';
@@ -87,6 +88,11 @@ class _SensorDashboardState extends State<SensorDashboard> {
             builder: (context, _) => ListView(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
               children: [
+                CrashVerdictCard(
+                  assessment: _service.detector.latest,
+                  thresholds: _service.detector.thresholds,
+                ),
+                CrashEventLog(events: _service.detector.events),
                 _ImpactHero(service: _service),
                 const SizedBox(height: 16),
                 if (_explain) const _HowDetectionWorks(),
