@@ -20,6 +20,30 @@ be measured on real hardware instead of guessed.
 | Barometer | `sensors_plus` | 15 Hz | Pressure in hPa |
 | Location | `geolocator` | every fix (`bestForNavigation`) | lat, lon, accuracy, altitude, heading, speed, speed accuracy, fix time, mock flag |
 
+### What each channel contributes to detection
+
+No single sensor detects a crash. Each channel rules out something the others cannot — the
+hard problem is not spotting a 20 g impact, it's *not* firing on the thousand potholes,
+dropped phones and hard stops that look similar.
+
+| Channel | What it's for | What it rules out |
+|---|---|---|
+| **Linear acceleration** | Primary trigger. Impact force with gravity removed, so it reads ~0 whenever the vehicle isn't changing speed, at any phone angle. | Nothing on its own — this is the signal the rest qualify. |
+| **Jerk** | Says the force arrived *too fast* to be braking. | Hard braking. Both reach ~0.8 g; braking takes a second, an impact under 50 ms. |
+| **Gyroscope** | Rollover and spin-out. | Misses. A vehicle that rolls may never peak in g — an accelerometer-only detector misses exactly the crashes most likely to injure someone. |
+| **Total g (with gravity)** | Orientation reference, and free-fall detection. | A dropped phone. Total g collapses toward 0 during the fall, immediately before its impact spike. A vehicle collision never does that. |
+| **GPS speed** | Confirms the vehicle was moving and then stopped. | A phone dropped inside a moving car — big spike, speed unchanged. That mismatch is the rejection. |
+| **GPS accuracy** | Gates trust in speed. | Tunnel/urban-canyon fixes that invent speed changes. Without this gate the detector fires whenever the sky is blocked. |
+| **Barometer** | Corroborates airbag deployment via cabin pressure spike. | Nothing alone — it raises confidence in a detection already made. |
+| **Magnetometer** | Non-drifting compass reference; with gravity, gives absolute orientation. | Gyroscope drift over a long drive. Needed to map phone-frame forces to vehicle-frame. |
+| **Lat/lon** | Where to send help. | — |
+
+**Calibration order:** drive a normal route first. Your peak linear g over ordinary driving
+*is* the false-positive floor — any threshold below it fires on normal use. Then record
+potholes, hard stops and phone drops deliberately, and set thresholds above all of them.
+
+Tap the **ⓘ** in the toolbar to see all of this inline against the live numbers.
+
 ### Derived metrics
 
 | Metric | Meaning |
