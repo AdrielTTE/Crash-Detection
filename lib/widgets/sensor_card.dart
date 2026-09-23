@@ -192,6 +192,8 @@ class ValueRow extends StatelessWidget {
     this.color,
     this.emphasis = false,
     this.description,
+    this.peak,
+    this.peakDecimals = 3,
   });
 
   final String label;
@@ -200,10 +202,16 @@ class ValueRow extends StatelessWidget {
   final bool emphasis;
   final String? description;
 
+  /// Session extremes for this measurement, rendered under the live value.
+  final PeakTracker? peak;
+  final int peakDecimals;
+
   @override
   Widget build(BuildContext context) {
     final explain = ExplainScope.of(context);
     final showDescription = explain && description != null;
+    final tracker = peak;
+    final showPeak = tracker != null && tracker.hasData;
 
     return Padding(
       padding: EdgeInsets.only(top: 3, bottom: showDescription ? 8 : 3),
@@ -233,6 +241,11 @@ class ValueRow extends StatelessWidget {
               ),
             ],
           ),
+          if (showPeak)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: PeakChips(tracker: tracker, decimals: peakDecimals),
+            ),
           if (showDescription)
             Padding(
               padding: const EdgeInsets.only(top: 3, right: 40),
@@ -251,6 +264,67 @@ class ValueRow extends StatelessWidget {
   }
 }
 
+/// Session high and low for one measurement, as a pair of small chips.
+///
+/// Both extremes are shown, always. For total g the low chip is the
+/// informative one — a value approaching 0 means the device was in free-fall,
+/// which is a dropped phone rather than a struck vehicle. Showing only the
+/// high would hide the single cheapest false-positive filter available.
+class PeakChips extends StatelessWidget {
+  const PeakChips({super.key, required this.tracker, this.decimals = 3});
+
+  final PeakTracker tracker;
+  final int decimals;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!tracker.hasData) return const SizedBox.shrink();
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        _Chip(
+          icon: '▲',
+          value: tracker.max!.toStringAsFixed(decimals),
+          color: AppColors.danger,
+        ),
+        const SizedBox(width: 6),
+        _Chip(
+          icon: '▼',
+          value: tracker.min!.toStringAsFixed(decimals),
+          color: AppColors.location,
+        ),
+      ],
+    );
+  }
+}
+
+class _Chip extends StatelessWidget {
+  const _Chip({required this.icon, required this.value, required this.color});
+
+  final String icon;
+  final String value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        '$icon $value',
+        style: AppTheme.numeric.copyWith(
+          color: color.withValues(alpha: 0.92),
+          fontSize: 9.5,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
 /// Three axes on one line. Axis order is fixed and labelled — an unlabelled
 /// triple is unreadable the moment the device is not flat on a table.
 class AxisRow extends StatelessWidget {
@@ -260,6 +334,7 @@ class AxisRow extends StatelessWidget {
     required this.accent,
     this.decimals = 3,
     this.description,
+    this.peaks,
   });
 
   final Vector3 vector;
@@ -267,17 +342,41 @@ class AxisRow extends StatelessWidget {
   final int decimals;
   final String? description;
 
+  /// Per-axis session extremes, in X, Y, Z order. Signed, so the low chip on
+  /// an axis is as meaningful as the high one — a front and a rear impact
+  /// drive the same axis in opposite directions.
+  final List<PeakTracker>? peaks;
+
   @override
   Widget build(BuildContext context) {
     final explain = ExplainScope.of(context);
+    final p = peaks;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            _Axis(label: 'X', value: vector.x, accent: accent, decimals: decimals),
-            _Axis(label: 'Y', value: vector.y, accent: accent, decimals: decimals),
-            _Axis(label: 'Z', value: vector.z, accent: accent, decimals: decimals),
+            _Axis(
+              label: 'X',
+              value: vector.x,
+              accent: accent,
+              decimals: decimals,
+              peak: p != null && p.isNotEmpty ? p[0] : null,
+            ),
+            _Axis(
+              label: 'Y',
+              value: vector.y,
+              accent: accent,
+              decimals: decimals,
+              peak: p != null && p.length > 1 ? p[1] : null,
+            ),
+            _Axis(
+              label: 'Z',
+              value: vector.z,
+              accent: accent,
+              decimals: decimals,
+              peak: p != null && p.length > 2 ? p[2] : null,
+            ),
           ],
         ),
         if (explain && description != null)
@@ -303,12 +402,14 @@ class _Axis extends StatelessWidget {
     required this.value,
     required this.accent,
     required this.decimals,
+    this.peak,
   });
 
   final String label;
   final double value;
   final Color accent;
   final int decimals;
+  final PeakTracker? peak;
 
   @override
   Widget build(BuildContext context) {
@@ -341,6 +442,29 @@ class _Axis extends StatelessWidget {
                 ),
               ),
             ),
+            if (peak != null && peak!.hasData) ...[
+              const SizedBox(height: 4),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  '▲${peak!.max!.toStringAsFixed(decimals)}',
+                  style: AppTheme.numeric.copyWith(
+                    color: AppColors.danger.withValues(alpha: 0.85),
+                    fontSize: 8.5,
+                  ),
+                ),
+              ),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  '▼${peak!.min!.toStringAsFixed(decimals)}',
+                  style: AppTheme.numeric.copyWith(
+                    color: AppColors.location.withValues(alpha: 0.85),
+                    fontSize: 8.5,
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),

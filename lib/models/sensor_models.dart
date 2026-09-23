@@ -64,6 +64,55 @@ class ChannelRate {
   }
 }
 
+/// Session extremes for one scalar metric, with the time each was reached.
+///
+/// Tracks the minimum as well as the maximum because for several channels the
+/// *low* extreme is the informative one. Total acceleration collapsing toward
+/// 0 g means free-fall — a phone that was dropped, not a vehicle that was
+/// struck — and that is the cheapest false-positive filter available. A
+/// max-only tracker throws that signal away.
+///
+/// The timestamps matter as much as the values: a crash is a cluster of
+/// extremes within a few hundred milliseconds. Peaks scattered across a
+/// half-hour drive are just rough road.
+class PeakTracker {
+  double? _max;
+  double? _min;
+  DateTime? _maxAt;
+  DateTime? _minAt;
+
+  double? get max => _max;
+  double? get min => _min;
+  DateTime? get maxAt => _maxAt;
+  DateTime? get minAt => _minAt;
+
+  bool get hasData => _max != null;
+
+  /// Spread between the extremes. For the barometer this is the whole signal —
+  /// absolute pressure drifts with weather, but a sharp swing is the airbag
+  /// cue.
+  double? get range => hasData ? _max! - _min! : null;
+
+  void record(double value) {
+    final now = DateTime.now();
+    if (_max == null || value > _max!) {
+      _max = value;
+      _maxAt = now;
+    }
+    if (_min == null || value < _min!) {
+      _min = value;
+      _minAt = now;
+    }
+  }
+
+  void reset() {
+    _max = null;
+    _min = null;
+    _maxAt = null;
+    _minAt = null;
+  }
+}
+
 /// Fixed-capacity ring of recent scalar samples, for the live traces.
 ///
 /// A plain growing List would be an unbounded leak: at 50 Hz this screen

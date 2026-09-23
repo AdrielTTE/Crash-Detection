@@ -90,6 +90,7 @@ class _SensorDashboardState extends State<SensorDashboard> {
                 _ImpactHero(service: _service),
                 const SizedBox(height: 16),
                 if (_explain) const _HowDetectionWorks(),
+                _SessionPeaksCard(service: _service),
                 _derivedCard(),
                 _linearCard(),
                 _accelerometerCard(),
@@ -125,42 +126,41 @@ class _SensorDashboardState extends State<SensorDashboard> {
     ),
     children: [
       ValueRow(
-        label: 'Peak linear acceleration',
-        value: '${_service.peakLinearG.toStringAsFixed(3)} g',
+        label: 'Linear acceleration',
+        value: '${_service.linearG.toStringAsFixed(3)} g',
         color: AppColors.linear,
         emphasis: true,
+        peak: _service.peakLinear,
         description:
-            'Highest impact force seen since the last reset. The primary '
-            'severity proxy. Drive a normal route and this number is your '
-            'false-positive floor — any threshold below it will fire on '
-            'ordinary driving.',
+            'The primary severity proxy. Drive a normal route and the ▲ peak '
+            'below is your false-positive floor — any threshold under it will '
+            'fire on ordinary driving.',
       ),
       ValueRow(
         label: 'Jerk (d|a|/dt)',
         value: '${_service.jerkGPerSec.toStringAsFixed(1)} g/s',
+        peak: _service.peakJerk,
+        peakDecimals: 1,
         description:
             'How fast the force is changing. This is what separates a crash '
             'from hard braking: both can reach 0.8 g, but braking climbs over '
             'a second while an impact arrives in under 50 ms.',
       ),
       ValueRow(
-        label: 'Peak jerk',
-        value: '${_service.peakJerkGPerSec.toStringAsFixed(1)} g/s',
+        label: 'Rotation',
+        value: '${_service.rotationDegPerSec.toStringAsFixed(1)} °/s',
+        peak: _service.peakRotation,
+        peakDecimals: 1,
         description:
-            'Highest rate of change since reset. Expected to be the strongest '
-            'discriminator between impacts and aggressive-but-normal driving.',
-      ),
-      ValueRow(
-        label: 'Peak rotation',
-        value: '${_service.peakRotationDegPerSec.toStringAsFixed(1)} °/s',
-        description:
-            'Highest angular rate since reset. Sustained high rotation after '
-            'an acceleration spike indicates a spin or rollover rather than a '
-            'single struck-and-stopped impact.',
+            'Sustained high rotation after an acceleration spike indicates a '
+            'spin or rollover rather than a single struck-and-stopped impact. '
+            'A pothole jolt is large and gone within a few samples.',
       ),
       ValueRow(
         label: 'Δv over last 1 s (estimate)',
         value: '${_service.deltaVEstimate.toStringAsFixed(2)} m/s',
+        peak: _service.peakDeltaV,
+        peakDecimals: 2,
         description:
             'Speed change over the last second. Delta-V is the standard crash '
             'severity measure in accident research — occupant injury risk '
@@ -185,6 +185,7 @@ class _SensorDashboardState extends State<SensorDashboard> {
       AxisRow(
         vector: _service.linearAcceleration,
         accent: AppColors.linear,
+        peaks: [_service.peakLinearX, _service.peakLinearY, _service.peakLinearZ],
         description:
             'Direction of the force, which tells you where the vehicle was '
             'struck — front, rear or side. Only meaningful once you know how '
@@ -205,6 +206,7 @@ class _SensorDashboardState extends State<SensorDashboard> {
         label: 'Magnitude',
         value: '${_service.linearG.toStringAsFixed(3)} g',
         color: AppColors.linear,
+        peak: _service.peakLinear,
         description:
             'The headline detection number. Rough bands to calibrate against: '
             'normal driving under 0.3 g, hard braking 0.5–0.8 g, a pothole a '
@@ -250,6 +252,7 @@ class _SensorDashboardState extends State<SensorDashboard> {
         label: 'Magnitude',
         value: '${_service.totalG.toStringAsFixed(3)} g',
         color: AppColors.accel,
+        peak: _service.peakTotal,
         description:
             'Sits at 1.000 at rest. A drop toward 0 means free-fall — the '
             'phone is falling, not the vehicle crashing. This is the single '
@@ -279,6 +282,7 @@ class _SensorDashboardState extends State<SensorDashboard> {
       AxisRow(
         vector: _service.gyroscope,
         accent: AppColors.gyro,
+        peaks: [_service.peakGyroX, _service.peakGyroY, _service.peakGyroZ],
         description:
             'Roll, pitch and yaw rates about the phone\'s own axes. Sustained '
             'rotation on the vertical axis is a spin-out; sustained rotation '
@@ -294,6 +298,8 @@ class _SensorDashboardState extends State<SensorDashboard> {
         label: 'Angular rate',
         value: '${_service.rotationDegPerSec.toStringAsFixed(1)} °/s',
         color: AppColors.gyro,
+        peak: _service.peakRotation,
+        peakDecimals: 1,
         description:
             'Same figure in degrees per second, which is easier to reason '
             'about: 90 °/s is a quarter-turn each second. Normal cornering '
@@ -362,6 +368,8 @@ class _SensorDashboardState extends State<SensorDashboard> {
               : '${_service.speedKmh!.toStringAsFixed(1)} km/h',
           color: AppColors.location,
           emphasis: true,
+          peak: _service.peakSpeedKmh,
+          peakDecimals: 1,
           description:
               'Speed before impact sets severity; speed after impact confirms '
               'it happened. A phone dropped in a cupholder produces a big '
@@ -465,6 +473,8 @@ class _SensorDashboardState extends State<SensorDashboard> {
           value: pressure == null ? '—' : '${pressure.toStringAsFixed(2)} hPa',
           color: AppColors.baro,
           emphasis: true,
+          peak: _service.peakPressure,
+          peakDecimals: 2,
           description:
               'Ambient air pressure. Around 1013 hPa at sea level, drifting '
               'slowly with weather and altitude. What matters for detection is '
@@ -501,6 +511,8 @@ class _SensorDashboardState extends State<SensorDashboard> {
         label: 'Field strength',
         value: '${_service.magnetometer.magnitude.toStringAsFixed(2)} µT',
         color: AppColors.magnet,
+        peak: _service.peakField,
+        peakDecimals: 2,
         description:
             'Earth\'s field is roughly 25–65 µT depending on latitude. A '
             'reading far outside that means local interference, and any '
@@ -772,6 +784,211 @@ class _Disclaimer extends StatelessWidget {
           fontSize: 10.5,
           height: 1.5,
         ),
+      ),
+    );
+  }
+}
+
+/// Every metric's session extremes in one table.
+///
+/// The per-card chips answer "what did this channel do"; this card answers
+/// "what happened during this run", which is the question during a
+/// calibration drive. Both extremes and the time of the high are shown: a
+/// crash is a cluster of extremes inside a few hundred milliseconds, so
+/// timestamps agreeing across channels is itself evidence, while peaks
+/// scattered over a half-hour drive are just rough road.
+class _SessionPeaksCard extends StatelessWidget {
+  const _SessionPeaksCard({required this.service});
+
+  final SensorService service;
+
+  @override
+  Widget build(BuildContext context) {
+    final peaks = service.allPeaks;
+    final withData = peaks.entries.where((e) => e.value.hasData).toList();
+    final explain = ExplainScope.of(context);
+    final started = service.sessionStart;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.stacked_line_chart,
+                  size: 15, color: AppColors.textSecondary),
+              const SizedBox(width: 7),
+              const Expanded(
+                child: Text(
+                  'SESSION PEAKS — ALL METRICS',
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+              ),
+              if (started != null)
+                Text(
+                  _elapsed(started),
+                  style: AppTheme.numeric.copyWith(
+                    color: AppColors.textMuted,
+                    fontSize: 10,
+                  ),
+                ),
+            ],
+          ),
+          if (explain) ...[
+            const SizedBox(height: 10),
+            const Text(
+              'Both extremes are kept. For total acceleration the ▼ low is the '
+              'useful one — approaching 0 g means free-fall, so the phone was '
+              'dropped rather than the vehicle struck. Reset between test runs '
+              'with the ↻ button.',
+              style: TextStyle(
+                color: AppColors.textMuted,
+                fontSize: 10.5,
+                height: 1.5,
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          if (withData.isEmpty)
+            const Text(
+              'Waiting for the first samples…',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 11),
+            )
+          else ...[
+            const _PeakHeaderRow(),
+            const SizedBox(height: 4),
+            for (final entry in withData)
+              _PeakRow(label: entry.key, tracker: entry.value),
+          ],
+        ],
+      ),
+    );
+  }
+
+  static String _elapsed(DateTime since) {
+    final d = DateTime.now().difference(since);
+    final m = d.inMinutes.toString().padLeft(2, '0');
+    final sec = (d.inSeconds % 60).toString().padLeft(2, '0');
+    return '$m:$sec';
+  }
+}
+
+class _PeakHeaderRow extends StatelessWidget {
+  const _PeakHeaderRow();
+
+  @override
+  Widget build(BuildContext context) {
+    const style = TextStyle(
+      color: AppColors.textMuted,
+      fontSize: 9,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 0.6,
+    );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 3),
+      child: Row(
+        children: [
+          const Expanded(flex: 4, child: Text('METRIC', style: style)),
+          const Expanded(
+            flex: 3,
+            child: Text('▲ HIGH', style: style, textAlign: TextAlign.right),
+          ),
+          const Expanded(
+            flex: 3,
+            child: Text('▼ LOW', style: style, textAlign: TextAlign.right),
+          ),
+          const Expanded(
+            flex: 3,
+            child: Text('AT', style: style, textAlign: TextAlign.right),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PeakRow extends StatelessWidget {
+  const _PeakRow({required this.label, required this.tracker});
+
+  final String label;
+  final PeakTracker tracker;
+
+  @override
+  Widget build(BuildContext context) {
+    final at = tracker.maxAt;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 4,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 11,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: Text(
+                tracker.max!.toStringAsFixed(3),
+                style: AppTheme.numeric.copyWith(
+                  color: AppColors.danger,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: Text(
+                tracker.min!.toStringAsFixed(3),
+                style: AppTheme.numeric.copyWith(
+                  color: AppColors.location,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: Text(
+                at == null
+                    ? '—'
+                    : at.toLocal().toIso8601String().substring(11, 22),
+                style: AppTheme.numeric.copyWith(
+                  color: AppColors.textMuted,
+                  fontSize: 10,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -57,9 +57,35 @@ class SensorService extends ChangeNotifier {
   /// before it shows in the accelerometer.
   double get rotationDegPerSec => gyroscope.magnitude * 180 / math.pi;
 
-  double peakLinearG = 0;
-  double peakRotationDegPerSec = 0;
-  double peakJerkGPerSec = 0;
+  // ── Session peaks, one per metric ───────────────────────────────────────
+  // Every metric carries extremes rather than only the headline ones. Until
+  // the detector exists, any channel may turn out to be the discriminator,
+  // and an extreme that was never recorded cannot be recovered after the
+  // drive. Each tracker holds min as well as max — see [PeakTracker].
+
+  final peakLinear = PeakTracker();
+  final peakTotal = PeakTracker();
+  final peakRotation = PeakTracker();
+  final peakJerk = PeakTracker();
+  final peakDeltaV = PeakTracker();
+  final peakSpeedKmh = PeakTracker();
+  final peakPressure = PeakTracker();
+  final peakField = PeakTracker();
+
+  /// Per-axis extremes. Signed, not absolute: a front impact and a rear
+  /// impact drive the same axis in opposite directions, and collapsing them
+  /// to a magnitude discards which one happened.
+  final peakLinearX = PeakTracker();
+  final peakLinearY = PeakTracker();
+  final peakLinearZ = PeakTracker();
+  final peakGyroX = PeakTracker();
+  final peakGyroY = PeakTracker();
+  final peakGyroZ = PeakTracker();
+
+  /// Backwards-compatible scalar view of the headline peaks.
+  double get peakLinearG => peakLinear.max ?? 0;
+  double get peakRotationDegPerSec => peakRotation.max ?? 0;
+  double get peakJerkGPerSec => peakJerk.max ?? 0;
 
   /// Rate of change of [linearG], in g per second. Distinguishes an impact
   /// from hard braking: both reach a similar peak, only one gets there fast.
@@ -113,6 +139,7 @@ class SensorService extends ChangeNotifier {
       (e) {
         accelerometer = Vector3(e.x, e.y, e.z);
         accelRate.tick();
+        peakTotal.record(totalG);
       },
     );
 
@@ -132,8 +159,10 @@ class SensorService extends ChangeNotifier {
       (e) {
         gyroscope = Vector3(e.x, e.y, e.z);
         gyroRate.tick();
-        peakRotationDegPerSec =
-            math.max(peakRotationDegPerSec, rotationDegPerSec);
+        peakRotation.record(rotationDegPerSec);
+        peakGyroX.record(e.x);
+        peakGyroY.record(e.y);
+        peakGyroZ.record(e.z);
       },
     );
 
@@ -143,6 +172,7 @@ class SensorService extends ChangeNotifier {
       (e) {
         magnetometer = Vector3(e.x, e.y, e.z);
         magnetRate.tick();
+        peakField.record(magnetometer.magnitude);
       },
     );
 
@@ -152,6 +182,7 @@ class SensorService extends ChangeNotifier {
       (e) {
         pressureHpa = e.pressure;
         baroRate.tick();
+        peakPressure.record(e.pressure);
       },
     );
 
@@ -179,7 +210,10 @@ class SensorService extends ChangeNotifier {
     final now = DateTime.now();
     final g = sample.magnitude / kStandardGravity;
 
-    peakLinearG = math.max(peakLinearG, g);
+    peakLinear.record(g);
+    peakLinearX.record(sample.x);
+    peakLinearY.record(sample.y);
+    peakLinearZ.record(sample.z);
     trace.add(g);
 
     final lastAt = _lastJerkAt;
@@ -187,7 +221,7 @@ class SensorService extends ChangeNotifier {
       final dt = now.difference(lastAt).inMicroseconds / 1e6;
       if (dt > 0) {
         jerkGPerSec = (g - _lastLinearG) / dt;
-        peakJerkGPerSec = math.max(peakJerkGPerSec, jerkGPerSec.abs());
+        peakJerk.record(jerkGPerSec);
       }
     }
     _lastLinearG = g;
@@ -220,6 +254,7 @@ class SensorService extends ChangeNotifier {
       sz += (prev.value.z + curr.value.z) / 2 * dt;
     }
     deltaVEstimate = Vector3(sx, sy, sz).magnitude;
+    peakDeltaV.record(deltaVEstimate);
   }
 
   Future<void> _startLocation() async {
@@ -256,6 +291,8 @@ class SensorService extends ChangeNotifier {
           (p) {
             position = p;
             locationRate.tick();
+            final kmh = speedKmh;
+            if (kmh != null) peakSpeedKmh.record(kmh);
           },
           onError: (Object error) {
             locationState = LocationState.error;
@@ -285,9 +322,9 @@ class SensorService extends ChangeNotifier {
   /// Clears the held peaks and the trace without dropping the subscriptions —
   /// the button the operator presses between test runs.
   void resetPeaks() {
-    peakLinearG = 0;
-    peakRotationDegPerSec = 0;
-    peakJerkGPerSec = 0;
+    for (final tracker in allPeaks.values) {
+      tracker.reset();
+    }
     deltaVEstimate = 0;
     jerkGPerSec = 0;
     trace.clear();
@@ -295,6 +332,28 @@ class SensorService extends ChangeNotifier {
     sessionStart = DateTime.now();
     notifyListeners();
   }
+
+  /// Every tracker, keyed by display label.
+  ///
+  /// Iterated by [resetPeaks] so a newly added metric cannot be forgotten
+  /// there - a peak that silently survives a reset reads as if it happened in
+  /// the run you are currently measuring.
+  Map<String, PeakTracker> get allPeaks => {
+    'Linear acceleration (g)': peakLinear,
+    'Linear X (m/s²)': peakLinearX,
+    'Linear Y (m/s²)': peakLinearY,
+    'Linear Z (m/s²)': peakLinearZ,
+    'Total acceleration (g)': peakTotal,
+    'Jerk (g/s)': peakJerk,
+    'Rotation (°/s)': peakRotation,
+    'Gyro X (rad/s)': peakGyroX,
+    'Gyro Y (rad/s)': peakGyroY,
+    'Gyro Z (rad/s)': peakGyroZ,
+    'Δv 1 s (m/s)': peakDeltaV,
+    'Speed (km/h)': peakSpeedKmh,
+    'Pressure (hPa)': peakPressure,
+    'Field strength (µT)': peakField,
+  };
 
   @override
   void dispose() {

@@ -53,7 +53,32 @@ Tap the **ⓘ** in the toolbar to see all of this inline against the live number
 | Jerk (g/s) | Rate of change of linear g. Distinguishes an impact from hard braking: both reach a similar peak, only one gets there fast. |
 | Rotation (°/s) | A rollover appears here before it appears in the accelerometer. |
 | Δv over last 1 s | Rolling trapezoidal integral of the linear-acceleration **vector**. |
-| Peak hold | Session maximum for linear g, jerk and rotation. Reset with the toolbar button. |
+| Peak hold | Session **high and low** for every metric — see below. Reset with the ↻ toolbar button. |
+
+### Session peaks
+
+Every metric carries extremes, not just the headline ones: until the detector exists, any
+channel may turn out to be the discriminator, and an extreme that was never recorded cannot
+be recovered after the drive.
+
+Both directions are kept, because for several channels the **low** is the informative one:
+
+- **Total acceleration** collapsing toward 0 g means free-fall — a dropped phone, not a
+  struck vehicle. A max-only tracker records the landing spike and misses the fall that
+  identifies it.
+- **Per-axis** peaks are signed, not absolute. A front and a rear impact drive the same axis
+  in opposite directions; collapsing to a magnitude discards which one happened.
+- **Pressure** drifts slowly with weather, so the absolute value says little — the range
+  between extremes is the airbag cue.
+
+Tracked: linear g, linear X/Y/Z, total g, jerk, rotation, gyro X/Y/Z, Δv, GPS speed,
+pressure, field strength.
+
+Each appears as `▲ high` / `▼ low` chips under its live reading, and all of them together in
+the **SESSION PEAKS** table at the top, with the time each high was reached. Timestamps
+matter: a crash is a cluster of extremes within a few hundred milliseconds, so several
+channels peaking at the same instant is itself evidence — peaks scattered across a half-hour
+drive are just rough road.
 
 ⚠️ **Δv is an estimate, not a calibrated delta-V.** It integrates a noisy MEMS signal, so
 bias makes it drift. Use it as a relative indicator between runs, never as an absolute
